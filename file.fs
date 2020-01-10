@@ -122,9 +122,7 @@ create sectorbuff 512 allot
 2variable fat_begin_lba
 2variable cluster_begin_lba
 variable sectors_per_cluster
-
-( Replaced with root_dir fileid structure below )
-\ 2variable root_dir_first_cluster
+2variable root_dir_first_cluster
 
 \ A word for making offsets
 : offset  ( u "name" -- ) ( addr1 -- addr2 )
@@ -163,13 +161,16 @@ variable sectors_per_cluster
 20 offset >linestart      (   4 bytes )
 24 offset >linebuffaddr   (   2 bytes ) ( 0x26 bytes total )
 
-1C constant /dirinfo      ( Bytes per dirinfo - only up to )
-                          ( >filesize is used              )
+1C constant /dirinfo      ( Bytes per dirinfo - only up   )
+                          ( through >fileposition is used )
 26 constant /fileinfo     ( Bytes per fileinfo structure )
 0A6 constant /fileinfo+buff ( Bytes including linebuffer )
 
-: newfileid here /fileinfo allot ;
-create root_dir /dirinfo allot ;
+: newfileid ( -- fileid )
+   here /fileinfo allot ( Allocate memory )
+   dup /fileinfo 0 fill ( Fill with zeroes ) ;
+
+create working_dir /dirinfo allot ;
 
 : finfo  ( fileid -- )  ( fileid info for debugging )
    cr ." FILEID: "          dup u.
@@ -215,9 +216,13 @@ create root_dir /dirinfo allot ;
    ( todo : subtract two "clusters" from cluster_begin_lba to make it 0-based )
    (        instead of starting at 2 and requiring offsetting clusters by 2.  )
    \ Get root dir first cluster.
-   sectorbuff >rootclust 32bit@   root_dir >firstcluster 2!
+   sectorbuff >rootclust 32bit@
+   \ Save it so we always have a copy.
+   2dup root_dir_first_cluster 2!
+   \ And start the working directory there.
+   working_dir >firstcluster 2!
    \ Set the name of the root directory.
-   s" /          "  root_dir >filename swap  move ;
+   s" /          "  working_dir >filename swap  move ;
 
 : fat.init  ( -- )  ( Intialize the FAT values )
    0. sector>buffer \ get MBR
@@ -382,9 +387,9 @@ create root_dir /dirinfo allot ;
    dup >filename cr 0B type  space  >filesize 32bit@ ud.
    true ( Keep going ) ;
 
-: ls ( -- ) ( List the root directory)
-   root_dir init_directory
-   ['] print-filename root_dir walkdirectory drop ;
+: ls ( -- ) ( List the working directory)
+   working_dir init_directory
+   ['] print-filename working_dir walkdirectory drop ;
 
 
 
@@ -413,8 +418,8 @@ create root_dir /dirinfo allot ;
    newfileid ( Allot memory for the file info )
    ( c-addr u fileid ) -rot 2 pick swap move ( filename )
    ( fileid ) r> over >attrib c! ( save fam )
-   ( fileid ) root_dir  init_directory
-   ( fileid ) ['] findfile root_dir walkdirectory
+   ( fileid ) working_dir  init_directory
+   ( fileid ) ['] findfile working_dir walkdirectory
    ( fileid direntry|0 )
    ?dup 0= if
       cr ." Can't open file: " dup 0B type cr
@@ -466,15 +471,17 @@ create root_dir /dirinfo allot ;
    ( fileid caddr u1 )
    ( attempt to read u1 characters )
    0 ?do
+      cr ." DEBUG FINFO " over finfo
       ( fileid caddr )
       ( Check for EOF )
-      over dup eof? if
+      over dup eof?           cr ." DEBUG EOF " .s        if
          2drop drop i 0 0 ( no error, just no more data )
          unloop exit then
       ( fileid caddr fileid )
-      read-char dup >r over i + c! r> ( Save the char )
+      read-char               cr ." READ-CHAR:  " .s
+      2dup swap i + c! ( Save the char )
       ( Check for end of line )
-      eol? if
+      eol?                    cr ." DEBUG EOL? " .s        if
          2drop i ( last char position ) 1 0
          unloop exit then
    loop
@@ -545,3 +552,5 @@ lcd.fs r/o open-file drop constant fileid
 : rewind  ( fileid -- )
    ( Move fileposition back to beginning of file )
    0. rot reposition-file drop ;
+
+create buff 80 allot
