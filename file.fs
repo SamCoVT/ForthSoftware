@@ -164,7 +164,6 @@ variable sectors_per_cluster
 1C constant /dirinfo      ( Bytes per dirinfo - only up   )
                           ( through >fileposition is used )
 26 constant /fileinfo     ( Bytes per fileinfo structure )
-0A6 constant /fileinfo+buff ( Bytes including linebuffer )
 
 : newfileid ( -- fileid )
    here /fileinfo allot ( Allocate memory )
@@ -311,7 +310,7 @@ create working_dir /dirinfo allot ;
    dup c@ E5 = \ See if it begins with E5
    \ Offset to the ATTRIB and see if it has all 4 lower bits
    \ set.
-   swap 0B + c@ 0f and 0f =
+   swap >attrib c@ 0f and 0f =
    \ If either of these things are true, it's an invalid entry.
    or ;
 
@@ -326,7 +325,7 @@ create working_dir /dirinfo allot ;
       r> nextsector  else r> drop  then ;
 
 : move_to_cluster  ( fileid clusternum.d -- )
-   \ Load the cluster and sector in the fileid structure.
+   \ Update the cluster and sector in the fileid structure.
    rot >r ( Save fileid )
    2dup   r@ >currentcluster 2!   cluster>sector
    2dup   r> >currentsector 2!
@@ -381,33 +380,46 @@ create working_dir /dirinfo allot ;
    sectorbuff  r> directory_offset  +
 ;
 
-: print-filename ( direntry_addr -- true )
-   \ Print a filename and size.
+: print-attrs ( direntry_addr -- ) ( Print file attributes )
+   >attrib c@
+   dup 01 and if [char] R emit else space then ( Read Only )
+   dup 02 and if [char] H emit else space then ( Hidden    )
+   dup 04 and if [char] S emit else space then ( System    )
+   ( Skipping Volume ID )
+   dup 10 and if [char] D emit else space then ( Directory )
+       20 and if [char] A emit else space then ( Archive   )
+   ;
+   
+: print-fileinfo ( direntry_addr -- true )
+   \ Print filename, atrributes, and size.
    \ Always return true to continue on to the next file.
-   dup >filename cr 0B type  space  >filesize 32bit@ ud.
+   cr
+   dup >filename 08 type ." ." dup >filename 8 + 3 type
+   space
+   dup print-attrs  space
+   >filesize 32bit@ 7 ud.r
    true ( Keep going ) ;
 
 : ls ( -- ) ( List the working directory)
+   cr ." FILENAME     ATTRIB   SIZE"
    working_dir init_directory
-   ['] print-filename working_dir walkdirectory drop ;
-
-
+   ['] print-fileinfo working_dir walkdirectory drop ;
 
 : bin ; ( Required by ANS, but we're ignoring it. )
 
 ( File access methods )
 1 constant r/o  2 constant w/o  3 constant r/w
 
-: findfile ( filestuct 'findfile direntry_addr -- f )
-   cr ." checking " dup 0B type cr .s ( DEBUG )
+: findfile ( fileid 'findfile direntry_addr -- f )
+( This word is used to help find a file in a directory  )
+( with walkdirectory.  It needs the address of a fileid )
+( structure with just the name filled in to be on the   )
+( stack -- under the things walkdirectory needs.        )
+   ( cr ." checking " dup 0B type cr .s ( DEBUG )
    0B ( length to compare )
    3 pick ( bring fileid struct address over )
    ( >filename -- but offset is zero)
    0B compare ;
-
-   
-   
-
 
 : eof? ( fileid -- f ) ( return true if at end of file )
    dup >fileposition 2@ rot >filesize 2@ d= ;
@@ -441,8 +453,6 @@ create working_dir /dirinfo allot ;
    0 ( no errors/exceptions )
 ;
 
-
-
 : read-char  ( fileid -- c ) ( Note: does not check eof )
    dup >currentsector 2@ sector>buffer ( Get the sector )
    dup >fileposition 2@ ( Get the position in the file )
@@ -462,8 +472,6 @@ create working_dir /dirinfo allot ;
 ( Note: windows CR+LF will show up as two line endings. )
 ( This should be OK for parsing files. )
 
-
-\ TODO: read-line has issues!  Fix it up.
 : read-line  ( caddr u1 fileid -- u2 flag ior )
    ( Save the start of the line )
    dup dup >fileposition 2@ rot >linestart 2!
@@ -517,8 +525,7 @@ create working_dir /dirinfo allot ;
    while
          r@ nextsector ( Move to the next sector )
          1. d- ( Reduce the count )
-      repeat
-         
+   repeat
    r> drop 2drop ;
 
 : reposition-file  ( ud fileid -- ior )
@@ -535,22 +542,104 @@ create working_dir /dirinfo allot ;
    cluster>sector ( Determine sector for this cluster )
    r@ >currentsector 2! ( Make that the current )
    r> sectorff ( Follow the FAT chains to the right sector )
-   0 ( IO Result - no error )
-;
-
-\ Testing
-cf.init fat.init
-
-: lcd.fs s" LCD     FS " ;
-
-lcd.fs r/o open-file drop constant fileid
+   0 ( IO Result - no error ) ;
 
 : catfile  ( fileid -- )  ( Copy file contents to screen )
-   >r ( Save fileid )
+   >r ( Save fileid ) cr ( Start on the next line )
    begin r@ eof? 0= while r@ read-char emit repeat r> drop ;
 
 : rewind  ( fileid -- )
    ( Move fileposition back to beginning of file )
    0. rot reposition-file drop ;
 
-create buff 80 allot
+
+
+decimal
+( Temporary strings for filenames )
+80 constant stringsize ( 80 char strings )
+2  constant #strings
+create stringsbuff stringsize #strings * allot
+variable whichstring
+hex
+
+: nextstring ( -- caddr ) ( Determine next string addr )
+   whichstring @ 1+ #strings mod ( Determine which is next )
+   dup whichstring ! ( Update the variable for later )
+   stringsize * stringsbuff + ; ( Calculate address )
+
+: " ( ccc" -- c-addr u ) ( Put a string into stringsbuff )
+   [char] " parse
+   stringsize min ( No more than 80 chars )
+   nextstring ( Use the next available temporary string )
+   swap 2dup 2>r cmove ( Copy into the current string )
+   2r> ; ( c-addr u for result left on stack )
+
+: dotindex ( caddr u -- u2 ) ( Find the . in a filename )
+   ( Return 0 if not found - or filename starts with . )
+   0 ?do
+      dup c@ [char] . = if drop i unloop exit then 1+
+   loop ( If we made it here, no . )
+   drop 0 ;
+
+: string>filename ( caddr u -- caddr2 u2 )
+   ( Convert a regular filename string into diraddr format )
+   ( "FNAME.EXT" becomes "FNAME   EXT"                     )
+   nextstring dup 0B blank ( Start with blank filename )
+   dup >r ( Save location for later )
+   -rot                                 ( ^ dest src u )
+   0C min ( No more than 12 chars for filename.ext )
+   2dup dotindex ( See if there is a . in the filename )
+   (                                 ^ dest src u udot )
+   ?dup 0= if ( No . so copy whole filename )
+      rot swap move ( Copy whole string )
+   else
+      ( Figure out how many chars in ext and save )
+      swap over - 1- >r                 ( ^ dest src udot )
+      2dup + 1+ >r ( addr after .         ^ dest src udot )
+      >r over r> move              ( ^ dest )
+      8 + ( Move to extension in destination )
+      r> swap r> ( Bring back source after .   ^ srcext destext uext )
+      move
+   then
+   r> ( Bring back original temp string ) 0B ;
+      
+: f" ( ccc" -- caddr u )
+   ( Accept a filename and convert to dirinfo format )
+   [char] " parse string>filename ;
+
+
+: cd ( caddr u -- ) ( Change the working directory )
+   string>filename drop
+   working_dir init_directory ( Start at the beginning of dir )
+   ( Address of dirname in dirinfo format is on the stack )
+   ['] findfile working_dir walkdirectory
+   ( working_dir_fileid direntry )
+   ?dup 0= if
+      cr ." Can't find directory: " dup 0B type cr exit
+   then
+   ( working_dir_fileid direntry )
+   swap drop ( Get rid of working_dir_fileid for now )
+   dup >clustLOW @ swap >clustHI @ ( Get starting cluster )
+   2dup d0= if ( Check for zero - meaning use root dir )
+      ( Replace with correct cluster for root dir )
+      2drop root_dir_first_cluster 2@
+   then
+   ( directory_firstcluster.d )
+   ( Save everything to move to the new directory )
+   working_dir >firstcluster 2! ( Fill in starting cluster )
+   working_dir init_directory ; ( Fill in all the rest     )
+
+   
+
+
+\ Testing
+cf.init fat.init
+
+\ : lcd.fs s" LCD     FS " ; ( A filename in direntry format )
+
+" LCD     FS " r/o open-file drop constant lcdfileid
+
+
+
+
+
