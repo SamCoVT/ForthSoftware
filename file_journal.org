@@ -1,0 +1,30 @@
+* Getting INCLUDED to nest
+I've been working on trying to get including of files to work on
+TaliForth2.  Currently, I read the file line by line into a buffer and
+calling EVALUATE on the buffer.  After realizing that I can't use the
+stack or the return stack, as that might mess with whatever is being
+interpreted/compiled, I switched to using variables to keep track of
+everything and got it basically working for INCLUDEing a single file.
+
+In order to nest properly, I need to access SOURCE-ID and possibly
+modify the behavior of REFILL.  It looks like QUIT is OK, as it
+already puts a zero in SOURCE-ID.
+** SOURCE-ID
+The issue in Tali is that SOURCE-ID puts the value on the stack and
+there is not a nice way to write a new value to it.  It's located at
+user0+6, but people may want to move it (eg. those working with a
+fragmented page 0 due to other software).  It might be best to just
+add a word that allows access to the location of source-ID.
+
+After reading the Summary of Forth Style Conventions, it looks like
+adding a word 'SOURCE-ID to provide the address of SOURCE-ID should
+work.
+
+** REFILL
+Refill's behavior can optionally be extended for both blocks and files.
+Refill is only used in QUIT and S" (for very long strings). 
+Refill's use in QUIT does not need to be modified, as QUIT always
+resets back to keyboard input.
+
+For now, no action will be taken on REFILL, as those changes are in
+the optional extension words section.
