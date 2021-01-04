@@ -115,7 +115,7 @@ previous \ remove the assembler wordlist
 : 32bit@  ( addr -- d )   dup @ swap 2 + @ ;
 
 \ fat variables
-create sectorbuff 512 allot
+create sectorbuff 200 allot \ 512 bytes ( 200 hex) for buffer
 2variable sector# \ The disk sector currently in the buffer
 
 2variable partition_lba_begin
@@ -169,7 +169,7 @@ variable sectors_per_cluster
    here /fileinfo allot ( Allocate memory )
    dup /fileinfo 0 fill ( Fill with zeroes ) ;
 
-create working_dir /dirinfo allot ;
+create working_dir /dirinfo allot
 
 : finfo  ( fileid -- )  ( fileid info for debugging )
    cr ." FILEID: "          dup u.
@@ -456,13 +456,13 @@ create working_dir /dirinfo allot ;
 : read-char  ( fileid -- c ) ( Note: does not check eof )
    dup >currentsector 2@ sector>buffer ( Get the sector )
    dup >fileposition 2@ ( Get the position in the file )
-   drop 200 ( 512 ) mod ( Get offset into buffer )
+   200 ( 512 ) um/mod drop ( Get offset into buffer )
    sectorbuff + c@ swap ( Get the character )
    ( c fileid )
    ( Move to next character )
    dup >fileposition d1+! ( increment fileposition )
    ( Check to see if we've wrapped to a new sector )
-   dup >fileposition 2@ drop 200 ( 512 ) mod 0= if
+   dup >fileposition 2@ 200 ( 512 ) um/mod drop 0= if
       nextsector ( uses fileid ) else drop ( the fileid )
    then
 ;
@@ -479,17 +479,17 @@ create working_dir /dirinfo allot ;
    ( fileid caddr u1 )
    ( attempt to read u1 characters )
    0 ?do
-      cr ." DEBUG FINFO " over finfo
+      ( cr ." DEBUG FINFO " over finfo )
       ( fileid caddr )
       ( Check for EOF )
-      over dup eof?           cr ." DEBUG EOF " .s        if
+      over dup eof?          ( cr ." DEBUG EOF " .s )       if
          2drop drop i 0 0 ( no error, just no more data )
          unloop exit then
       ( fileid caddr fileid )
-      read-char               cr ." READ-CHAR:  " .s
+      read-char              ( cr ." READ-CHAR:  " .s )
       2dup swap i + c! ( Save the char )
       ( Check for end of line )
-      eol?                    cr ." DEBUG EOL? " .s        if
+      eol?                   ( cr ." DEBUG EOL? " .s )       if
          2drop i ( last char position ) 1 0
          unloop exit then
    loop
@@ -637,9 +637,45 @@ cf.init fat.init
 
 \ : lcd.fs s" LCD     FS " ; ( A filename in direntry format )
 
-" LCD     FS " r/o open-file drop constant lcdfileid
+\ f" LCD.FS" r/o open-file drop constant lcdfileid
 
 
+decimal
+create mybuff 80 allot
+: catbyline
+   >r
+   begin
+      mybuff 80 r@ read-line drop
+   while
+         mybuff swap cr type
+   repeat
+   r> drop ;
 
 
+\ NEEDS WORK SECTION
 
+variable current_fileid
+0 current_fileid !
+
+: source-id ( -- u) ( Modify source-id to return file-id if available ) 
+   current_fileid @ ?dup if else source-id then ;
+
+: included ( caddr u -- ) ( Open and interpret file )
+   r/o open-file if exit then ( Make sure the file opens. )
+   cr
+   ( fileid )
+   current_fileid @ >r   current_fileid ! ( save fileid for source-id )
+   begin
+      current_fileid @   mybuff 80 rot read-line drop
+      ( numchars_read not_at_eof_flag )
+   while
+         ( numchars_read )
+         dup mybuff swap type cr ( Type it to the screen. )
+         mybuff swap evaluate ( Run it. )
+   repeat
+   r> current_fileid ! ( restore previous fileid )
+;
+
+: include ( "filename" -- ) ( prefix version of included )
+   parse-name ( filename comes next - with no quotes )
+   string>filename included ;

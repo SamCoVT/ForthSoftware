@@ -5,6 +5,8 @@
 \ and FAT32 support for my 65C02 Single Board Computer
 \ using Tali Forth 2.
 
+\ NOTE: This has been superseded by file.fs
+
 
 \ \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 
@@ -343,11 +345,15 @@ previous \ remove the assembler wordlist
    root_dir_first_cluster 2@   init_directory
    ['] print-filename walkdirectory drop ;
 
-: findscreens.fs ( direntry_addr -- f ) 0B s" SCREENS FS " compare ;
+\ Words to allow a file to be used as a block source.
+create catfilename 0B allot ( filename without dot )
+: findcatfile 0B catfilename 0B compare ;
 
-: examplecat
+: examplecat ( uaddr n -- ) ( Take name as string and cat to console )
+   catfilename swap move ( Save file name )
+    
    root_dir_first_cluster 2@   init_directory
-   ['] findscreens.fs walkdirectory
+   ['] findcatfile walkdirectory
    \ Dir entry on stack.  Get size and first cluster.
    dup >filesize 32bit@ ( size ) 
    rot \ Put behind dir entry
