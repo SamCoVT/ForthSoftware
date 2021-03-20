@@ -79,8 +79,10 @@ $7F02 constant via.ddrb
     \ Chop result to just byte recieved.
     $ff and ;
 
-: >spi ( u -- )   >spi> drop ;
-: spi> ( -- u )   $FF >spi> ;
+: >spi ( u -- )   >spi> drop ; always-native
+: spi> ( -- u )   $FF >spi> ; always-native
+
+: spi.clear ( -- ) #520 0 do spi> drop loop ;
 
 : sd.r1 ( -- u )
     \ Wait for a response.
@@ -152,56 +154,90 @@ $7F02 constant via.ddrb
 
 
 : sd.acmd41 ( -- resp )
-    sd.cmd55  .
+    sd.cmd55 drop
     spi.ssLO
-    0 0 0 0 $40 #41 sd.cmd sd.r1 . cr
+    0 0 0 0 $40 #41 sd.cmd sd.r1
     $FF >spi \ 1 extra idle byte with SS low.
     spi.ssHI $FF >spi ; \ 1 extra idle byte with SS high.
 
 
 
 : sd.init ( -- )
-    spi.init
-    spi.sshi 80 0 do spi.clock loop
-    spi.sslo
-    sd.cmd0  1 = if
-        cr ." Command 0 accepted" cr
-\        ." Starting initialization (Command 1)."
-\        begin sd.cmd1  1 and while ." ." repeat
-\        ." COMPLETE" cr
-\        ." Sending Command 8: "
-\        5 0 do spi> . space loop cr
-    then
-\    begin
-\        ." Send ACMD 41" cr
-\        0 0 0 0 0 #55 sd.cmd drop
-\        0 0 0 0 0 #41 sd.cmd
-\    0= until
-    
-    
+   spi.init
+   spi.sshi 80 0 do spi.clock loop
+   4 0 do
+      sd.cmd0  1 = if
+         cr ." Command 0 accepted" cr leave
+      then
+      \ Abort if it never worked.
+      i 3 = if unloop exit then
+   loop
+   
+   ." Sending Command 8: "
+   4 0 do sd.cmd8 if leave then
+      i 3 = if ." ERROR" unloop exit then
+   loop
+   ud.
+   
+   ." Sending AMCD41: "
+   #200 0 do
+      ." ."
+      sd.acmd41
+      0= if ." SUCCESS" cr leave then
+   loop
 ;
 
-: readmbr
-    \ Send command 17
-    spi.sslo
-    0 0 0 0 0 #17 sd.cmd sd.r1
-    cr ." CMD17 sent - response =" . cr
-    begin $ff >spi>  dup $ff = while  drop repeat
-    ." Data token is " . cr
-    ." Data is " cr
-    512 0 do
-        i 32 mod 0= if cr then
-        $ff >spi> . space
-    loop
-    cr
-    $ff >spi> ." CRC is " . cr
-
-    $FF >spi \ 1 extra idle byte with SS low.
-    spi.ssHI $FF >spi ; \ 1 extra idle byte with SS high.
-
+: split
+   dup $ff and  swap 8 rshift ;
+: dsplit ( du -- lsb b b msb )  ( Split a double word into bytes )
+   swap split ( work with LSB first)
+   rot split ( MSB ends up on TOS ) ;
+   
+: sd.waittoken ( -- u ) ( Wait for data token)
+   #200 0
+   do spi> dup
+      $ff <> if leave then
+      drop
+      i #199 = if
+         ." READ TIMEOUT" unloop unloop
+         $ff ( Return $ff as that's an invalid token) exit
+      then
+   loop ;
 
 
+: readsectors  ( addr numsectors LBA.d )
+   rot 
+   0 ?do
+      ( debug ) ." i is " i . cr
+      2dup  i s>d d+  ( compute the current LBA sector to read )
+      ( debug ) ." sector is " 2dup ud. 
+      \ Send command 17
+      spi.sslo
+      0 -rot ( CRC)  dsplit ( sector# )  #17 sd.cmd sd.r1
+      cr ." CMD17 sent - response = " . cr
+      sd.waittoken
+      ." Data token is " . cr
+      2 pick #512 i * + ( Calculate starting address for this 512 byte chunk)
+      ( debug ) ." address is " dup .
+      dup #512 + swap ( Calculate ending memory address )
+      do
+         spi> i !
+      loop
+      cr
+      ." CRC is " spi> . spi> . cr
+
+      $FF >spi \ 1 extra idle byte with SS low.
+      spi.ssHI $FF >spi  \ 1 extra idle byte with SS high.
+   loop
+   2drop ( Remove LBA address from return stack )
+   drop ( starting memory address )
+;
 
 
+
+
+
+
+ 
     
 
