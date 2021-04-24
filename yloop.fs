@@ -1,9 +1,7 @@
 \ PROGRAMMER  : Sam Colwell
 \ FILE        : yloop.fs
 \ DATE        : 2021-04
-\ DESCRIPTION : Tali DO loops are a bit slow as all parameters are pushed
-\ and pulled from the return stack every loop and all comparisons
-\ are 16-bit.  For small loops of 256 or less, these words will use
+\ DESCRIPTION : For small loops of 256 or less, these words will use
 \ the Y register in cowntdown mode only (eg load with 8-bit starting
 \ count and it will always count down to zero) which is generally useful
 \ for code that needs to run a number of times, but doesn't need to
@@ -88,9 +86,12 @@ decimal
 
 ' testingy           cycle_test   CYCLES: 3660  ok
 ' testingdo          cycle_test   CYCLES: 16775  ok
+
 ' testingyi          cycle_test   CYCLES: 13605  ok
 ' testingdoi         cycle_test   CYCLES: 32075  ok
+
 ' testingyy          cycle_test   CYCLES: 933900  ok
 ' testingdodo        cycle_test   CYCLES: 4291340  ok
+
 ' testingyyij        cycle_test   CYCLES: 5420625  ok
 ' testingdodoij      cycle_test   CYCLES: 11053940  ok
