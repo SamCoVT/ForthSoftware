@@ -1,4 +1,4 @@
-( SamCo ANS double words including ext. words 1/  2020-01 )
+( SamCo ANS double words including ext. words 1/2 2020-01 )
 ( Tali 2 has the following words already: 2CONSTANT       )
 ( 2LITERAL 2VARIABLE D+ D- D. D.R D>S DABS DNEGATE        )
 assembler-wordlist >order  ( Bring in assembler )
@@ -14,7 +14,7 @@ assembler-wordlist >order  ( Bring in assembler )
   rot = -rot = and ; allow-native
 
 
-( SamCo ANS double words including ext. words 1/  2020-01 )
+( SamCo ANS double words including ext. words 2/2 2020-01 )
 ( M*/ from All About FORTH, MVP-Forth, public domain )
 ( Note: This version allows n2 to be negative    )
 : M*/  ( d1 n1 n2 -- d2 ) ( modified slightly for Tali2 )
@@ -27,8 +27,9 @@ SWAP DROP SWAP ROT 0< if dnegate then ;
 : DU<  ( ud1 ud2 -- flag )  ( flag is true iff ud1 < ud2 )
   rot 2dup <> if swap 2swap then 2drop u< ;
 
+( Still to be written: DMAX DMIN D0< 2ROT )
 
-\ Still to be written: DMAX DMIN D0< 2ROT
+
 
 \ misc useful words (not part of the ANS standard)
 \ Multiply unsigned double by unsigned, resulting in unsigned double.
