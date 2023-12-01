@@ -4,6 +4,12 @@
 \ DESCRIPTION : A simple full-screen editor for TaliForth2.
 \               Requires an ANSI compatible terminal with
 \               the arrow keys in cursor movement mode
+\ KEYS :
+\ ^X = Save and exit                ^G = Don't save and exit
+\ ^A or HOME = beginning of line    ^E or END = end of line
+\ INSERT = Toggle INSert/OVeRwrite  ^L = Redraw Screen
+\ Arrow keys, backspace, and delete also supported
+\ Behavior of delete (backspace/delete) depends on terminal
 
 decimal 
 variable ed.row    \ Row (0 based)
@@ -62,6 +68,7 @@ variable ed.inserting
   #64 ed.col @ - ;
 
 : ed.shuffle ( n -- ) ( Shuffle line along n characters )
+  ed.lineleft min ( Prevent shuffling off the end )
   ed.currentpoint  2dup +  rot ed.lineleft swap -  move ;
 
 : ed.shuffleback ( -- ) ( Shuffle line back one character )
@@ -72,7 +79,7 @@ variable ed.inserting
   #15 min  dup #15 <> if ( Only if not on the last line... )
     dup #64 *  ed.buffer @ +           ( Starting address )
     dup #64 +                      ( Address of next line )
-    ed.buffer @  #960 +  over - ( Characters to move )
+    ed.buffer @  #1024 +  over - ( Characters to move )
     move
   then #64 * ed.buffer @ +  #64  bl  fill ; ( Clear line )
 
@@ -81,18 +88,19 @@ variable ed.inserting
   ed.currentpoint pad ed.lineleft move ;
 
 : ed.paste ( -- ) ( Paste pad to current point )
-  pad ed.currentpoint
+  pad ed.currentpoint ( Source and destination for move )
+  ( Determnine how many characters to move )  
   pad #64 -trailing swap drop  ed.lineleft  min
-  dup 64 < if 1+ dup ed.shuffle then ( shuffle remaining line )
+  ( See if there is any line remaining and shuffle it down )  
+    dup ed.col @ + ( Column paste will end )
+    64 < if dup ed.shuffle then ( shuffle remaining line )
   move ( in memory)
-  ed.currentpoint ed.lineleft type ( on screen )
-;
+  ed.currentpoint ed.lineleft type ( on screen ) ;
 
 : ed.clreol ( -- ) ( Clear to end of line )
   ed.copyeol ( Save deleted text to pad )
   ed.currentpoint  ed.lineleft  bl   fill ( in memory )
-  #64 ed.col @ - spaces ( on screen )
-;
+  #64 ed.col @ - spaces ( on screen ) ;
 
 : ed.advance ( -- ) ( Move position one place or to next line )
   ed.rowend? if ed.nextline else ed.col++ then ;
@@ -105,41 +113,46 @@ variable ed.inserting
     else
       dup emit ( Print it ) ed.currentpoint c! ( Save it )
       ed.advance  ed.col @ 0= if ed.movecursor then 
-  then
-;
+  then ;
 
-: ed.backspace ( -- )
+: ed.backspace ( -- ) ( Backspace one character )
   ed.col @ if ed.shuffleback ed.col-- ed.movecursor
               ed.currentpoint ed.lineleft type
               ed.movecursor then ;
 
+: ed.delete ( -- ) ( Delete char at cursor )
+  ( this may temporarily end up with 64 in ed.col )
+  ed.col @  1+  ed.col !
+  ed.backspace ;
+
 : ed.processkey ( c -- )
   case #01 ( CTRL-A ) of 0 ed.col !  ed.movecursor endof
-       #05 ( CTRL-E ) of ed.row @ ed.moveeol ed.movecursor endof
+       #05 ( CTRL-E ) of ed.moveeol  ed.movecursor endof
        #24 ( CTRL-X ) of update   flush   1 ed.done ! endof
-       #07 ( CTRL-G ) of empty-buffers  scr @ block ( reload )
-                        1 ed.done ! endof
+       #07 ( CTRL-G ) of empty-buffers
+                         scr @ block drop ( reload )
+                         1 ed.done ! endof
        #11 ( CTRL-K ) of ed.clreol ed.movecursor endof
        #12 ( CTRL-L ) of ed.drawscreen endof
        #25 ( CTRL-Y ) of ed.paste ed.movecursor endof
-       #09 ( CTRL-I ) of 16 ed.row @   dup ed.insertline
+       #09 ( CTRL-I ) of 16  ed.row @   dup ed.insertline
                          do i ed.printline loop
                          ed.movecursor endof
        #27 ( ESC ) of
-         key  [char] [  = if
+         key  dup  [char] [ =  [char] O =  or  if
            key case [char] A ( Up Arrow )    of ed.row-- endof
                     [char] B ( Down Arrow )  of ed.row++ endof
                     [char] C ( Right Arrow ) of ed.col++ endof
                     [char] D ( Left Arrow )  of ed.col-- endof
-                    [char] H ( Home )        of
-                      0 ed.col !  ed.movecursor endof
-                    [char] F ( End  )        of
-                      ed.moveeol  ed.movecursor endof
+                    [char] H ( Home )        of 0 ed.col ! endof
+                    [char] F ( End  )        of ed.moveeol endof
                     [char] 2 ( Insert )      of
                       ed.inserting @ invert  ed.inserting !
                       ed.drawinsovr
                       key drop ( eat the ~ ) endof
-                      
+                    [char] 3 ( Delete)       of
+                      ed.delete      
+                      key drop ( eat the ~ ) endof
                endcase  ed.movecursor
            then
        endof
@@ -153,13 +166,16 @@ variable ed.inserting
 : edit ( u -- ) ( Edit the given screen )
   dup scr !  block ed.buffer !  0 ed.done !  TRUE ed.inserting !
   0 ed.row !  0 ed.col !  ed.drawscreen
-  begin
-    key ed.processkey
-    ed.done @ until   #1 #19 at-xy ;
+  begin key ed.processkey   ed.done @ until   #1 #19 at-xy ;
   
 
 \ Testing:
 : testkey ( -- ) ( Print ASCII values - q to quit )
-  begin key dup [char] q = if drop true else . false then until ; 
-4 block-ramdrive-init
-1 edit
+  begin key  dup .  [char] q = until ; 
+\ 4 block-ramdrive-init
+\ 1 edit
+
+\ For systems without at-xy
+\ : ns. ( u -- ) ( Print # w/ no space ) base @ swap 0 <# #s #> type  base ! ;
+\ : at-xy ( x y -- ) ( Move cursor )
+\   #27 emit  [char] [ emit  swap ns.  [char] ; emit  ns.  [char] H emit ;
