@@ -61,17 +61,24 @@ assembler-wordlist >order
         \ Just call the kernel getkey
         neoSendMessage [ 2 c, 1 c, ] neoWaitMessage endof
       4 of ( Put Line )
+        \ Put the counted string on the stack as addr u
+        neoLineBuffer count
         \ Get line number
-        neoParameters 1+ @
+        neoParameters 1+ @ ( addr u  linenum )
         \ I believe this is one-based counting.
         \ Make it zero-based.
-        1-
+        1-                 ( addr u  linenum )
         \ Get where line is in Tali buffer.
-        #64 *  scr @ block  +
+        #64 *  scr @ block  +  ( addr u  addr )
+        \ TODO: Make the incoming string exactly 64 chars if its
+        \ length was changed.
+        
         \ Put the counted string there
-        neoLineBuffer count swap move   endof
+        swap ( addr addr u ) move   endof
       ( Insert Line and Delete Line not supported and ignored )
     endcase
+    \ Go back into the editor.
+    neoSendMessage [ 13 c, 2 c, ] neoWaitMessage
 repeat ;
         
         
