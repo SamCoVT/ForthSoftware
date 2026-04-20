@@ -94,8 +94,8 @@ assembler-wordlist >order
    0 ?do
       \ Tali uses NUXI format for doubles.
       [ clc
-      2 rol.zx 3 rol.zx \ Most significant cell
-      0 rol.zx 1 rol.zx \ Least significant cell
+      2 rol.zx 3 rol.zx \ Least significant cell
+      0 rol.zx 1 rol.zx \ Most significant cell
       ]
    loop ;
 
@@ -103,8 +103,8 @@ assembler-wordlist >order
    0 ?do
       \ Tali uses NUXI format for doubles.
       [ clc
-      1 ror.zx 0 ror.zx \ Least significant cell
-      3 ror.zx 2 ror.zx \ Most significant cell
+      1 ror.zx 0 ror.zx \ Most significant cell
+      3 ror.zx 2 ror.zx \ Least significant cell
       ]
    loop ;
 
